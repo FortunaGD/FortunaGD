@@ -1,0 +1,131 @@
+---
+title: "Bagging and Random Forest"
+author: "Fortuna Zhang"
+output: pdf_document
+---
+
+## Bagging and Random Forest
+
+## Training and Test set
+```{r}
+library(MASS)
+
+set.seed(1)
+
+names(Boston)
+
+train = sample(1:nrow(Boston),nrow(Boston)/2)
+
+boston.test=Boston[-train,"medv"]
+```
+
+## Bagged tree
+```{r}
+# random forest 
+library(randomForest)
+
+set.seed(1)
+# Bagged tree
+# mtry: # of predictors used in branching; importance: variable importance score
+bag.boston = randomForest(medv~., data=Boston, subset=train, mtry=13, importance=TRUE)
+
+bag.boston
+```
+
+## Visualization of bagged tree
+```{r}
+# prediction of bagged tree
+yhat.bag = predict(bag.boston, newdata = Boston[-train,])
+# Visualization
+plot(yhat.bag,boston.test)
+# test MSE
+mean((yhat.bag-boston.test)^2)
+```
+
+## Bagged tree with 25 trees
+```{r}
+# Build bagged tree again, ntree: # of trees
+bag.boston = randomForest(medv~.,data = Boston, subset=train, mtry=13, ntree=25)
+
+yhat.bag = predict(bag.boston,newdata = Boston[-train,])
+
+mean((yhat.bag-boston.test)^2)
+```
+Test MSE is worse since 25 trees are not sufficient. 
+
+## Random forest
+```{r}
+# choose candidate predictors randomly for every branching
+set.seed(1)
+# mtry=6: choose 6 predictors for branching
+rf.boston = randomForest(medv~.,data=Boston,subset=train,mtry=6,importance = TRUE)
+
+yhat.rf = predict(rf.boston,newdata = Boston[-train,])
+
+mean((yhat.rf-boston.test)^2)
+```
+Random forest with less predictors is better. Test MSE lower than bagged tree.
+
+## Visualization of random forest
+```{r}
+# variable importance plot
+varImpPlot(rf.boston)
+# variable importance score
+importance(rf.boston)
+```
+%IncMSE: how much MSE will worse if take out that predictor
+IncNodePurity: how much impure the node is if take out that predictor
+In this case, rm, lstat are important predictors. 
+
+## Boosted tree
+```{r}
+# Boosted tree
+library(gbm)
+
+set.seed(1)
+# target variable is numeric: "gaussian"; n.tress: # of trees; interaction.depth: max # of leaf nodes in each tree
+boost.boston = gbm(medv~.,Boston[train,],distribution = "gaussian", n.trees=5000,interaction.depth=4)
+summary(boost.boston)
+```
+
+
+# Visualization of boosted tree
+```{r}
+
+par(mfrow=c(1,2))
+# Partial Dependency Plots
+plot(boost.boston,i="rm")
+
+plot(boost.boston,i="lstat")
+
+par(mfrow=c(1,1))
+```
+Plot shows relationships between rm/lstat with target variable.
+
+## prediction of boosted tree
+```{r}
+yhat.boost=predict(boost.boston,newdata=Boston[-train,],n.trees=5000)
+
+boston.test=Boston[-train,"medv"]
+
+mean((yhat.boost-boston.test)^2)
+```
+
+## Tune boosted using shrinkage rate
+```{r}
+set.seed(1)
+# shrinkage***: learning rate; verbose=F: not report progress while building model
+
+boost.boston = gbm(medv~.,data=Boston[train,],distribution="gaussian",n.trees=5000,interaction.depth=4,shrinkage=0.2,verbose=F)
+# use 5000 trees 
+yhat.boost=predict(boost.boston,newdata=Boston[-train,],n.trees=5000)
+
+mean((yhat.boost-boston.test)^2)
+# use 500 trees 
+yhat.boost=predict(boost.boston,newdata=Boston[-train,],n.trees=500)
+
+mean((yhat.boost-boston.test)^2)
+```
+
+500 and 5000 trees are similar. Tune shrinkage rate could improve accuracy. 
+Boosted tree is the best among random forest and bagged tree.
