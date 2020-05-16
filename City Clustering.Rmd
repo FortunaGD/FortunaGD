@@ -1,0 +1,223 @@
+---
+title: "City Clustering base on city GDP and retail sales from 2010 to 2018"
+author: "Fortuna Zhang"
+date: "5/15/2020"
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+```{r}
+# https://uc-r.github.io/kmeans_clustering
+# https://www.statsandr.com/blog/clustering-analysis-k-means-and-hierarchical-clustering-by-hand-and-in-r/#elbow-method
+library(dplyr)
+GDP = read.csv("Data/GDP中文.csv",skip = 3, header = T)
+GDP = head(GDP,-1)
+retail = read.csv("Data/retail中文.csv",skip = 3,header = T)
+retail = head(retail,-1)
+colnames(GDP) = gsub("X","",colnames(GDP))
+colnames(retail) = gsub("X","",colnames(retail))
+
+df = merge(GDP,retail,by.x = "地区",by.y = "地区")
+# x is GDP, y is retail sales
+df$`2019年.x` = NULL
+df$`2019年.y` = NULL
+df = data.frame(df[,-1], row.names = df[,1])
+colnames(df) = gsub("X","",colnames(df))
+colnames(df)
+df =  replace(df, is.na(df), 0)
+```
+
+```{r}
+GDP2 = read.csv("Data/GDP.csv",skip = 3, header = T)
+GDP2 = head(GDP2,-1)
+retail2 = read.csv("Data/retail.csv",skip = 3,header = T)
+retail2 = head(retail2,-1)
+colnames(GDP2) = gsub("X","",colnames(GDP2))
+colnames(retail2) = gsub("X","",colnames(retail2))
+colnames(retail2)
+df2 = merge(GDP2,retail2,by.x = "City",by.y = "City")
+# x is GDP, y is retail sales
+df2$`2019.x` = NULL
+df2$`2019.y` = NULL
+df2 = data.frame(df2[,-1], row.names = df2[,1])
+colnames(df2) = gsub("X","",colnames(df2))
+colnames(df2)
+df2 =  replace(df2, is.na(df2), 0)
+```
+Kendall correlation distance:
+Kendall correlation method measures the correspondence between the ranking of x and y variables.
+```{r}
+#install.packages("factoextra")
+# Install from CRAN
+#install.packages("tidyverse")
+library(tidyverse)  # data manipulation
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering algorithms & visualization
+distance = get_dist(df2)
+fviz_dist(distance,gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+K-means Clustering:
+K-means clustering is the most commonly used unsupervised machine learning algorithm for partitioning a given data set into a set of k groups (i.e. k clusters), where k represents the number of groups pre-specified by the analyst. It classifies objects in multiple groups (i.e., clusters), such that objects within the same cluster are as similar as possible (i.e., high intra-class similarity), whereas objects from different clusters are as dissimilar as possible (i.e., low inter-class similarity). In k-means clustering, each cluster is represented by its center (i.e, centroid) which corresponds to the mean of points assigned to the cluster.
+
+cluster: A vector of integers (from 1:k) indicating the cluster to which each point is allocated.
+centers: A matrix of cluster centers.
+totss: The total sum of squares.
+withinss: Vector of within-cluster sum of squares, one component per cluster.
+tot.withinss: Total within-cluster sum of squares, i.e. sum(withinss).
+betweenss: The between-cluster sum of squares, i.e. $totss-tot.withinss$.
+size: The number of points in each cluster.
+```{r}
+# English version clustering
+# k-means clustering, target at 2 centroids, starts at 36 initial centroids
+k2 <- kmeans(df2, centers = 2, nstart = 36)
+k2
+```
+
+```{r}
+# k-means clustering, target at 3 centroids, starts at 36 initial centroids
+k3 <- kmeans(df2, centers = 3, nstart = 36)
+k3
+table(k3$cluster)
+```
+```{r}
+# k-means clustering, target at 4 centroids, starts at 36 initial centroids
+k4 <- kmeans(df2, centers = 4, nstart = 36)
+k4
+```
+```{r}
+# k-means clustering, target at 5 centroids, starts at 36 initial centroids
+k5 <- kmeans(df2, centers = 5, nstart = 36)
+k5
+```
+```{r}
+# Compare Total within-cluster sum of squares & Between-cluster sum of squares across different k values
+compare = matrix(c(k2$tot.withinss,k3$tot.withinss,k4$tot.withinss,k5$tot.withinss,k2$betweenss,k3$betweenss,k4$betweenss,k5$betweenss),ncol=4,byrow=TRUE)
+colnames(compare) = c('k2','k3','k4','k5')
+rownames(compare) = c("Total within-cluster sum of squares","Between-cluster sum of squares")
+comparetable = as.table(compare)
+comparetable
+```
+
+Compare different k values:
+```{r}
+k2 <- kmeans(df2, centers = 2, nstart = 36)
+k3 <- kmeans(df2, centers = 3, nstart = 36)
+k4 <- kmeans(df2, centers = 4, nstart = 36)
+k5 <- kmeans(df2, centers = 5, nstart = 36)
+
+# plots to compare
+p1 <- fviz_cluster(k2, geom = "point", data = df2) + ggtitle("k = 2")
+p2 <- fviz_cluster(k3, geom = "point",  data = df2) + ggtitle("k = 3")
+p3 <- fviz_cluster(k4, geom = "point",  data = df2) + ggtitle("k = 4")
+p4 <- fviz_cluster(k5, geom = "point",  data = df2) + ggtitle("k = 5")
+
+library(gridExtra)
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+```
+We can find large change of clustering pattern when k reduces from 4 to 3.This shows 3 can be the optimal k value. 
+
+
+Use three methods to select the optimal k value:
+Elbow method, Average Silhouette Method, and Gap Statistic Method.
+```{r}
+# Elbow method
+set.seed(123)
+wss <- function(k) {
+  kmeans(df2, k, nstart = 36 )$tot.withinss
+}
+
+# Compute and plot wss for k = 1 to k = 15
+k.values <- 1:10
+
+# extract wss for 2-15 clusters
+wss_values <- map_dbl(k.values, wss)
+
+plot(k.values, wss_values,
+       type="b", pch = 19, frame = FALSE, 
+       xlab="Number of clusters K",
+       ylab="Total within-clusters sum of squares")
+
+```
+
+```{r}
+fviz_nbclust(df2, kmeans, method = "wss") + geom_vline(xintercept = 3, linetype = 2)+
+  labs(subtitle = "Elbow method")
+```
+Elbow method shows that optimal k value is 4.
+
+```{r}
+# Average Silhouette Method
+fviz_nbclust(df2, kmeans, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+```
+```{r}
+avg_sil <- function(k) {
+  km.res <- kmeans(df2, centers = k, nstart = 36)
+  ss <- silhouette(km.res$cluster, dist(df2))
+  mean(ss[, 3])
+}
+
+# Compute and plot wss for k = 2 to k = 15
+k.values <- 2:10
+
+# extract avg silhouette for 2-15 clusters
+avg_sil_values <- map_dbl(k.values, avg_sil)
+
+plot(k.values, avg_sil_values,
+       type = "b", pch = 19, frame = FALSE, 
+       xlab = "Number of clusters K",
+       ylab = "Average Silhouettes")
+```
+```{r}
+sil <- silhouette(k2$cluster, dist(df2))
+fviz_silhouette(sil)
+```
+Average Silhouette method shows that optimal k value is 2.
+
+```{r}
+# Gap Statistic Method
+# compute gap statistic
+set.seed(123)
+gap_stat <- clusGap(df2, FUN = kmeans, nstart = 36,
+                    K.max = 10, B = 50,d.power = 1)
+# Print the result
+print(gap_stat, method = "firstmax")
+```
+```{r}
+fviz_gap_stat(gap_stat)+
+  labs(subtitle = "Gap statistic method")
+```
+Gap Statistic Method shows that optimal k value is 1.
+
+In conclusion, we should choose 3 as the optimal k value, so there are 3 clusters of cities base on city GDP and retail sales from 2010 to 2018.
+
+
+Clustering Visualizations:
+Principal component analysis (PCA) Visualization:
+plot the data points according to the first two principal components that explain the majority of the variance
+```{r}
+fviz_cluster(k3, data = df2)
+```
+Pairwise scatter plots:
+```{r}
+df %>%
+  as_tibble() %>%
+  mutate(cluster = k3$cluster,
+         city = row.names(df2)) %>%
+  ggplot(aes(`2018年.x`, `2018年.y`, color = factor(cluster), label = city)) +
+  geom_text()
+```
+City Cluster Results Summary:
+```{r}
+# Chinese version clustering
+# k-means clustering, target at 3 centroids, starts at 36 initial centroids
+k3chi <- kmeans(df, centers = 3, nstart = 36)
+table(k3chi$cluster)
+k3chi$cluster
+```
+City clustering results are shown as above. In total there are 6 cities in the first cluster,17 cities in the second cluster, and 13 cities in the third cluster. 
+
+
